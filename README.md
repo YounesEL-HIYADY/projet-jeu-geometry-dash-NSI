@@ -77,7 +77,3 @@ Fichier pour charger le niveau avec des caractères ( la manière la plus optimi
     "============================================"
   ]
 }
-
-
-Projet réalisé par Younes EL HIYADY - Noah GRAFFE - Amine EL KHALLOUFI (surtout younes en vrai 🤣)
-NSI 2025 — Jeu inspiré de Geometry Dash en Python / Pygame
