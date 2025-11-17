@@ -64,14 +64,14 @@ class Level:
         for platform in self.platforms:
             platform.rect.x -= self.scroll_speed
         for spike in self.spikes:
-            spike.rect.x -= self.scroll_speed
+            spike.update(self.scroll_speed)  # Utiliser la méthode update des spikes
 
         # Mise à jour du joueur (gravité + collisions)
         self.player.update(self.platforms)
 
         # Collision avec les spikes → réinitialiser le niveau
         for spike in self.spikes:
-            if self.player.rect.colliderect(spike.rect):
+            if self.player.rect.colliderect(spike.hitbox):
                 self.__init__("levels/level1.json")
 
     def draw(self, screen):
@@ -83,9 +83,13 @@ class Level:
         bg_scaled = pygame.transform.scale(self.bg_image, screen.get_size())
         screen.blit(bg_scaled, (0, 0))
 
-        # --- Dessiner plateformes et spikes ---
+        # --- Dessiner plateformes ---
         self.platforms.draw(screen)
-        self.spikes.draw(screen)
+        
+        # --- Dessiner spikes avec leur propre méthode draw ---
+        for spike in self.spikes:
+            spike.draw(screen)
 
         # --- Dessiner le joueur ---
         screen.blit(self.player.image, self.player.rect)
+        

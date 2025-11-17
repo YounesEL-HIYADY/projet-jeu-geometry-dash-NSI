@@ -23,13 +23,32 @@ class Spike(pygame.sprite.Sprite):
         super().__init__()
         image = pygame.image.load("assets/spike.png").convert_alpha()
 
-        # Redimensionner les pics pour correspondre à la taille des tuiles
+        # Redimensionner l'image du pic
         scale = 0.7 * (TILE_SIZE / image.get_width())
         new_width = int(image.get_width() * scale)
         new_height = int(image.get_height() * scale)
         self.image = pygame.transform.scale(image, (new_width, new_height))
 
-        # Positionner le pic
+        # Utiliser la rect de l'image pour l'affichage
         self.rect = self.image.get_rect()
-        self.rect.x = x + (TILE_SIZE - new_width) // 2
+        
+        # ---- POSITIONNEMENT PARFAIT ----
+        # Centrer horizontalement exactement sur le centre de la tuile
+        self.rect.centerx = x + TILE_SIZE // 2
+        # Aligner le bas du spike avec le bas de la tuile
         self.rect.bottom = ground_y
+        
+        # Hitbox plus petite pour des collisions plus équitables
+        self.hitbox = pygame.Rect(0, 0, new_width * 0.5, new_height)
+        self.hitbox.centerx = self.rect.centerx
+        self.hitbox.bottom = self.rect.bottom
+
+    def update(self, scroll_speed):
+        """Met à jour la position lors du défilement"""
+        self.rect.x -= scroll_speed
+        self.hitbox.x -= scroll_speed
+
+    def draw(self, screen):
+        """Méthode pour dessiner l'image"""
+        screen.blit(self.image, self.rect)
+        
