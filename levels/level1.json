@@ -1,13 +1,15 @@
 {
   "tile_size": 75,
+  "theme_folder": "forest",
+  "parallax_speed": 0.4,
   "layout": [
     "                                            ",
     "                                            ",
     "                                            ",
     "                                            ",
-    "           S  S                             ",
-    "          PPPPP                             ",
-    "       PSS                   S           SSS",
-    "============================================"
+    "                 S  S                             ",
+    "            P O PPPPP              O O            ",
+    "          P  SSS                  SSSSS           F",
+    "=================================================="
   ]
 }
