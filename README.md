@@ -77,3 +77,10 @@ Fichier pour charger le niveau avec des caractères ( la manière la plus optimi
     "============================================"
   ]
 }
+
+liens :
+
+https://kenney.nl/assets/shape-characters
+https://kenney.nl/assets/googly-eyes
+https://kenney.nl/assets/background-elements
+https://kenney.nl/assets/simplified-platformer-pack
