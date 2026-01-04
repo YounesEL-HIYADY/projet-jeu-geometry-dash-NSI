@@ -1,38 +1,20 @@
 import pygame
 import os
 import sys
-import random
 
-# ============================================
-# 1. INITIALISATION PYGAME - DOIT ÊTRE EN PREMIER
-# ============================================
+# INITIALISATION
 pygame.init()
 pygame.mixer.init()
 
-# ============================================
-# 2. IMPORT DES CONSTANTES
-# ============================================
-from config import WIDTH, HEIGHT
-
-# ============================================
-# 3. CRÉATION DE LA FENÊTRE AVANT TOUT IMPORT
-# ============================================
+from config import WIDTH, HEIGHT, COLOR_WHITE, COLOR_BLACK
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
-pygame.display.set_caption("Projet NSI Younes EL HIYADY")
+pygame.display.set_caption("Geometry Dash Purist")
 clock = pygame.time.Clock()
 
-# ============================================
-# 4. IMPORT DU RESTE (après initialisation pygame)
-# ============================================
 from level import Level
-from menu import draw_menu, draw_pause_menu, draw_level_select
+from menu import draw_menu, draw_pause_menu, draw_level_select, get_level_selector, draw_victory_screen
 
-# Cache global d'assets pour optimisation
 ASSETS_CACHE = {}
-
-# ============================================
-# GAME STATE
-# ============================================
 
 class GameState:
     def __init__(self):
@@ -40,129 +22,44 @@ class GameState:
         self.selected_level = None
         self.running = True
         self.attempts = 0
+        self.current_level_index = 0
 
     def change(self, new):
         self.state = new
 
 GAME_STATE = GameState()
 
-# ============================================
-# ÉCRAN DE VICTOIRE PREMIUM
-# ============================================
-
-def draw_victory_screen(screen, attempts, tile_size):
-    """Écran de victoire avec animations"""
-    screen.fill((10, 10, 30))
-    
-    # Particules de célébration
-    for _ in range(30):
-        x = random.randint(0, WIDTH)
-        y = random.randint(0, HEIGHT)
-        size = random.randint(3, 6)
-        pygame.draw.circle(screen, (255, 215, 0), (x, y), size)
-    
-    # Titre principal
-    title_font = pygame.font.SysFont("Arial", 72, bold=True)
-    title = title_font.render("VICTORY!", True, (255, 215, 0))
-    title_rect = title.get_rect(center=(WIDTH//2, HEIGHT//2 - 100))
-    screen.blit(title, title_rect)
-    
-    # Statistiques
-    stats_font = pygame.font.SysFont("Arial", 36)
-    stats = stats_font.render(f"Terminé en {attempts} tentatives", True, (255, 255, 255))
-    stats_rect = stats.get_rect(center=(WIDTH//2, HEIGHT//2))
-    screen.blit(stats, stats_rect)
-    
-    # Boutons
-    btn_font = pygame.font.SysFont("Arial", 28, bold=True)
-    menu_btn = pygame.Rect(WIDTH//2 - 150, HEIGHT//2 + 80, 140, 50)
-    retry_btn = pygame.Rect(WIDTH//2 + 10, HEIGHT//2 + 80, 140, 50)
-    
-    # Dessiner boutons avec hover
-    mouse_pos = pygame.mouse.get_pos()
-    for btn, text in [(menu_btn, "MENU"), (retry_btn, "REJOUER")]:
-        color = (0, 200, 255) if btn.collidepoint(mouse_pos) else (100, 100, 120)
-        pygame.draw.rect(screen, color, btn, border_radius=15)
-        txt = btn_font.render(text, True, (255, 255, 255))
-        screen.blit(txt, txt.get_rect(center=btn.center))
-    
-    return {"menu": menu_btn, "retry": retry_btn}
-
-# ============================================
-# CHARGEMENT ASSETS
-# ============================================
-
 def load_assets():
     assets = {}
     SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-    ASSETS_DIR = os.path.join(SCRIPT_DIR, "assets")
     
-    print(f"\n📁 Dossier racine : {SCRIPT_DIR}")
-    print(f"📁 Dossier assets : {ASSETS_DIR}")
+    # 🎨 Charger le fond du menu principal
+    try:
+        bg_menu_path = os.path.join(SCRIPT_DIR, "assets", "bg.png")
+        assets["menu_bg"] = pygame.image.load(bg_menu_path).convert() if os.path.exists(bg_menu_path) else None
+    except:
+        assets["menu_bg"] = None
     
     try:
-        # Background de secours
-        bg_path = os.path.join(ASSETS_DIR, "background.png")
-        if os.path.exists(bg_path):
-            assets["background"] = pygame.image.load(bg_path).convert()
-            print("✅ background.png")
-        else:
-            print("❌ background.png manquant")
-            
-        # Joueur de secours
-        player_path = os.path.join(ASSETS_DIR, "cube.png")
-        if os.path.exists(player_path):
-            assets["player_cube"] = pygame.image.load(player_path).convert_alpha()
-            print("✅ cube.png")
-        else:
-            print("❌ cube.png manquant")
-        
-        # Assets theme default
-        block_path = os.path.join(ASSETS_DIR, "themes", "default", "block.png")
-        if os.path.exists(block_path):
-            assets["block_default"] = pygame.image.load(block_path).convert_alpha()
-            print("✅ themes/default/block.png")
-        else:
-            print("❌ block.png manquant")
-            
-        spike_path = os.path.join(ASSETS_DIR, "themes", "default", "spike.png")
-        if os.path.exists(spike_path):
-            assets["spike_default"] = pygame.image.load(spike_path).convert_alpha()
-            print("✅ themes/default/spike.png")
-        else:
-            print("❌ spike.png manquant")
-        
-    except Exception as e:
-        print(f"⚠ Erreur chargement : {e}")
-    
-    # Fallbacks si manquant
-    if "background" not in assets:
-        print("⚠ Utilisation fallback background")
+        bg_path = os.path.join(SCRIPT_DIR, "assets", "background.png")
+        assets["background"] = pygame.image.load(bg_path).convert() if os.path.exists(bg_path) else pygame.Surface((WIDTH, HEIGHT))
+        if "background" not in assets or not isinstance(assets["background"], pygame.Surface):
+            assets["background"] = pygame.Surface((WIDTH, HEIGHT))
+            assets["background"].fill(COLOR_WHITE)
+    except:
         assets["background"] = pygame.Surface((WIDTH, HEIGHT))
-        assets["background"].fill((20, 20, 40))
+        assets["background"].fill(COLOR_WHITE)
     
-    if "player_cube" not in assets:
-        print("⚠ Utilisation fallback player")
+    try:
+        player_path = os.path.join(SCRIPT_DIR, "assets", "cube.png")
+        assets["player_cube"] = pygame.image.load(player_path).convert_alpha() if os.path.exists(player_path) else pygame.Surface((30, 30))
+    except:
         assets["player_cube"] = pygame.Surface((30, 30))
-        assets["player_cube"].fill((255, 0, 0))
-    
-    if "block_default" not in assets:
-        print("⚠ Utilisation fallback block")
-        assets["block_default"] = pygame.Surface((75, 75))
-        assets["block_default"].fill((100, 100, 100))
-    
-    if "spike_default" not in assets:
-        print("⚠ Utilisation fallback spike")
-        assets["spike_default"] = pygame.Surface((50, 50))
-        assets["spike_default"].fill((200, 0, 0))
+        assets["player_cube"].fill(COLOR_BLACK)
     
     return assets
 
 ASSETS = load_assets()
-
-# ============================================
-# LECTURE NIVEAUX
-# ============================================
 
 def get_available_levels():
     SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -170,31 +67,28 @@ def get_available_levels():
     
     if not os.path.exists(levels_dir):
         os.makedirs(levels_dir)
-        # Créer niveau par défaut
         default_path = os.path.join(levels_dir, "level1.json")
         with open(default_path, "w") as f:
             f.write('{"tile_size":75,"theme_folder":"default","layout":["========================================"]}')
         return ["level1.json"]
     
     files = [f for f in os.listdir(levels_dir) if f.startswith("level") and f.endswith(".json")]
-    files.sort(key=lambda f: int(f.replace("level","").replace(".json","")))
+    files.sort(key=lambda f: int(''.join(filter(str.isdigit, f))))
     return files if files else []
 
 AVAILABLE_LEVELS = get_available_levels()
 DEFAULT_LEVEL = AVAILABLE_LEVELS[0] if AVAILABLE_LEVELS else "level1.json"
 
-# Charger premier niveau
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 level_path = os.path.join(SCRIPT_DIR, "levels", DEFAULT_LEVEL)
 level = Level(level_path, ASSETS["background"], ASSETS_CACHE, WIDTH, HEIGHT)
 
-# ============================================
-# BOUCLE PRINCIPALE
-# ============================================
+level_selector = None
 
+# BOUCLE PRINCIPALE
 while GAME_STATE.running:
     dt = clock.tick(60) / 1000.0
-    dt = min(dt, 0.016)  # Clamp delta time
+    dt = min(dt, 0.016)
     
     mouse_pos = pygame.mouse.get_pos()
     events = pygame.event.get()
@@ -211,36 +105,41 @@ while GAME_STATE.running:
                 GAME_STATE.change("GAME")
                 level.camera.is_paused = False
 
-    # --------------------- MENU PRINCIPAL
     if GAME_STATE.state == "MENU":
-        btns = draw_menu(screen, mouse_pos, GAME_STATE.state)
+        # 🎨 Passer le fond au menu
+        btns = draw_menu(screen, mouse_pos, GAME_STATE.state, ASSETS.get("menu_bg"))
 
         for e in events:
             if e.type == pygame.MOUSEBUTTONDOWN:
                 if btns["play"].collidepoint(mouse_pos):
                     GAME_STATE.change("LEVEL_SELECT")
+                    level_selector = get_level_selector(screen, AVAILABLE_LEVELS)
                 if btns["quit"].collidepoint(mouse_pos):
                     GAME_STATE.running = False
 
-    # --------------------- SELECT NIVEAU
     elif GAME_STATE.state == "LEVEL_SELECT":
-        data = draw_level_select(screen, mouse_pos, AVAILABLE_LEVELS, GAME_STATE.state)
-
+        if level_selector is None:
+            level_selector = get_level_selector(screen, AVAILABLE_LEVELS)
+        
+        level_selector.update(mouse_pos, dt)
+        level_selector.draw(screen, ASSETS.get("menu_bg"))
+        
         for e in events:
             if e.type == pygame.MOUSEBUTTONDOWN:
-                if data["back"].collidepoint(mouse_pos):
-                    GAME_STATE.change("MENU")
+                if level_selector.btn_prev.rect.collidepoint(mouse_pos) and level_selector.current_index > 0:
+                    level_selector.navigate(-1)
+                elif level_selector.btn_next.rect.collidepoint(mouse_pos) and level_selector.current_index < len(AVAILABLE_LEVELS) - 1:
+                    level_selector.navigate(1)
+                elif level_selector.btn_play.rect.collidepoint(mouse_pos):
+                    level_name = level_selector.get_current_level()
+                    GAME_STATE.selected_level = level_name
+                    level.stop_music()
+                    lvl_path = os.path.join(SCRIPT_DIR, "levels", level_name)
+                    level = Level(lvl_path, ASSETS["background"], ASSETS_CACHE, WIDTH, HEIGHT)
+                    GAME_STATE.attempts = 0
+                    GAME_STATE.change("GAME")
+                    level_selector = None
 
-                for rect, lvl in data["levels"]:
-                    if rect.collidepoint(mouse_pos):
-                        GAME_STATE.selected_level = lvl
-                        level.stop_music()
-                        lvl_path = os.path.join(SCRIPT_DIR, "levels", lvl)
-                        level = Level(lvl_path, ASSETS["background"], ASSETS_CACHE, WIDTH, HEIGHT)
-                        GAME_STATE.attempts = 0
-                        GAME_STATE.change("GAME")
-
-    # --------------------- PAUSE
     elif GAME_STATE.state == "PAUSE":
         btns = draw_pause_menu(screen, mouse_pos, GAME_STATE.state)
 
@@ -254,13 +153,11 @@ while GAME_STATE.running:
                     level.reset()
                     GAME_STATE.change("MENU")
 
-    # --------------------- JEU
     elif GAME_STATE.state == "GAME":
         keys = pygame.key.get_pressed()
         if keys[pygame.K_SPACE]:
             level.player.jump()
 
-        # Update
         is_dead, is_completed = level.update(dt)
         
         if is_dead:
@@ -270,18 +167,17 @@ while GAME_STATE.running:
             print(f"✅ Niveau complété en {GAME_STATE.attempts + 1} tentatives!")
             GAME_STATE.change("VICTORY")
 
-        # Render
-        screen.fill((30,30,30))
+        screen.fill(COLOR_WHITE)
         level.draw(screen, WIDTH)
 
-    # --------------------- VICTOIRE
     elif GAME_STATE.state == "VICTORY":
-        btns = draw_victory_screen(screen, GAME_STATE.attempts + 1, level.tile_size)
+        btns = draw_victory_screen(screen, mouse_pos, GAME_STATE.attempts + 1)
         
         for e in events:
             if e.type == pygame.MOUSEBUTTONDOWN:
                 if btns["menu"].collidepoint(mouse_pos):
                     GAME_STATE.change("LEVEL_SELECT")
+                    level_selector = None
                 if btns["retry"].collidepoint(mouse_pos):
                     level.reset()
                     GAME_STATE.attempts = 0

@@ -1,342 +1,233 @@
 import pygame
-import random
-import math
-from config import WIDTH, HEIGHT
+from config import WIDTH, HEIGHT, COLOR_WHITE, COLOR_BLACK
+import os
 
-# Couleurs modernes
-COLORS = {
-    "bg": (10, 10, 30),
-    "primary": (0, 220, 255),
-    "secondary": (150, 0, 255),
-    "accent": (255, 100, 0),
-    "white": (255, 255, 255),
-    "gray": (100, 100, 120),
-    "dark": (20, 20, 40),
-    "glow": (255, 255, 100)
-}
+# 🛠️ FONCTION ESSENTIELLE - DOIT ÊTRE DÉFINIE EN PREMIER
+def get_pixel_font(size):
+    """
+    Charge une police pixel ou retourne une police système de secours.
+    """
+    try:
+        # Essayer la police pixel personnalisée
+        font_path = "assets/fonts/pixel.ttf"
+        if os.path.exists(font_path):
+            return pygame.font.Font(font_path, size)
+        else:
+            # Police système moderne
+            return pygame.font.SysFont("Consolas", size, bold=True)
+    except Exception as e:
+        print(f"⚠️ Erreur chargement police: {e}")
+        # Ultime recours
+        return pygame.font.SysFont("Arial", size, bold=True)
 
-# Cache
-GRADIENT_CACHE = {}
-PARTICLE_SYSTEM = None
-
-class Particle:
-    """Particule pour l'effet de fond animé"""
-    def __init__(self):
-        self.x = random.randint(0, WIDTH)
-        self.y = random.randint(0, HEIGHT)
-        self.vx = random.uniform(-20, 20)
-        self.vy = random.uniform(-20, 20)
-        self.size = random.randint(2, 6)
-        self.life = 1.0
-        self.max_life = random.uniform(1.5, 3.0)
-        self.color = random.choice([COLORS["primary"], COLORS["secondary"], COLORS["accent"]])
-    
-    def update(self, dt):
-        self.x += self.vx * dt * 30
-        self.y += self.vy * dt * 30
-        self.life -= dt
-        
-        # Wrap screen
-        if self.x < 0: self.x = WIDTH
-        if self.x > WIDTH: self.x = 0
-        if self.y < 0: self.y = HEIGHT
-        if self.y > HEIGHT: self.y = 0
-    
-    def draw(self, screen):
-        alpha = int(255 * (self.life / self.max_life))
-        surf = pygame.Surface((self.size*2, self.size*2), pygame.SRCALPHA)
-        pygame.draw.circle(surf, (*self.color, alpha), (self.size, self.size), self.size)
-        screen.blit(surf, (self.x - self.size, self.y - self.size))
-
-class ParticleSystem:
-    """Système de particules de fond"""
-    def __init__(self, count=30):
-        self.particles = [Particle() for _ in range(count)]
-    
-    def update(self, dt):
-        for p in self.particles:
-            p.update(dt)
-            if p.life <= 0:
-                p.__init__()
-    
-    def draw(self, screen):
-        for p in self.particles:
-            p.draw(screen)
-
-class Button:
-    """Bouton avec animations premium"""
-    def __init__(self, x, y, w, h, text, icon=None, primary=True):
+# 🎨 CLASSE BOUTON MODERNE
+class MinimalButton:
+    def __init__(self, x, y, w, h, text, callback=None, bg_color=(0,0,0,180), text_color=COLOR_WHITE):
         self.rect = pygame.Rect(x, y, w, h)
         self.text = text
-        self.icon = icon
-        self.is_hovered = False
-        self.hover_progress = 0.0
-        self.primary = primary
-        self.font = pygame.font.SysFont("Arial", 28, bold=True)
+        self.callback = callback
+        self.hovered = False
+        self.bg_color = bg_color
+        self.text_color = text_color
         
-        self.gradient = self._create_gradient(w, h, primary)
-    
-    def _create_gradient(self, w, h, primary):
-        """Crée un gradient dynamique"""
-        key = f"grad_{w}_{h}_{primary}"
-        if key in GRADIENT_CACHE:
-            return GRADIENT_CACHE[key]
+        # Utiliser la fonction globale
+        self.font = get_pixel_font(24)
         
-        surf = pygame.Surface((w, h), pygame.SRCALPHA)
-        color1 = COLORS["primary"] if primary else COLORS["secondary"]
-        color2 = COLORS["dark"]
-        
-        for y in range(h):
-            ratio = y / h
-            r = int(color1[0] * (1 - ratio) + color2[0] * ratio)
-            g = int(color1[1] * (1 - ratio) + color2[1] * ratio)
-            b = int(color1[2] * (1 - ratio) + color2[2] * ratio)
-            pygame.draw.line(surf, (r, g, b), (0, y), (w, y))
-        
-        rounded = pygame.Surface((w, h), pygame.SRCALPHA)
-        pygame.draw.rect(rounded, (255, 255, 255), (0, 0, w, h), border_radius=15)
-        surf.blit(rounded, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
-        
-        GRADIENT_CACHE[key] = surf
-        return surf
+        self.text_surf = self.font.render(text, True, self.text_color)
+        self.text_rect = self.text_surf.get_rect(center=self.rect.center)
     
     def update(self, mouse_pos):
-        was_hovered = self.is_hovered
-        self.is_hovered = self.rect.collidepoint(mouse_pos)
-        
-        target = 1.0 if self.is_hovered else 0.0
-        speed = 0.15
-        self.hover_progress += (target - self.hover_progress) * speed
-        
-        return self.is_hovered and not was_hovered
+        self.hovered = self.rect.collidepoint(mouse_pos)
+        return self.hovered
     
     def draw(self, screen):
-        # Position avec hover offset
-        offset_y = -5 * self.hover_progress
-        draw_rect = self.rect.copy()
-        draw_rect.y += int(offset_y)
+        # Surface temporaire pour la transparence
+        button_surface = pygame.Surface((self.rect.width, self.rect.height), pygame.SRCALPHA)
         
-        # Ombre
-        shadow = pygame.Surface((self.rect.w, self.rect.h), pygame.SRCALPHA)
-        pygame.draw.rect(shadow, (0, 0, 0, 100), shadow.get_rect(), border_radius=15)
-        screen.blit(shadow, draw_rect.move(0, 5))
+        # Couleur de fond avec transparence
+        bg_alpha = self.bg_color[3] if len(self.bg_color) == 4 else 255
+        current_alpha = min(255, bg_alpha + 50) if self.hovered else bg_alpha
         
-        # Bouton gradient
-        screen.blit(self.gradient, draw_rect)
+        pygame.draw.rect(button_surface, (*self.bg_color[:3], current_alpha), button_surface.get_rect())
         
-        # Glow effect
-        if self.hover_progress > 0.1:
-            glow = pygame.Surface((draw_rect.w + 10, draw_rect.h + 10), pygame.SRCALPHA)
-            pygame.draw.rect(glow, (*COLORS["glow"], int(50 * self.hover_progress)), 
-                           glow.get_rect(), border_radius=18)
-            screen.blit(glow, glow.get_rect(center=draw_rect.center))
+        # Bordure subtile
+        border_alpha = 150 if self.hovered else 100
+        border_color = (255, 255, 255, border_alpha)
+        pygame.draw.rect(button_surface, border_color, button_surface.get_rect(), width=2)
         
         # Texte
-        text_surf = self.font.render(self.text, True, COLORS["white"])
-        text_rect = text_surf.get_rect(center=draw_rect.center)
-        screen.blit(text_surf, text_rect)
+        text_surface = self.font.render(self.text, True, self.text_color)
+        text_rect = text_surface.get_rect(center=(self.rect.width // 2, self.rect.height // 2))
+        button_surface.blit(text_surface, text_rect)
         
-        # Icône
-        if self.icon:
-            icon_surf = pygame.Surface((30, 30), pygame.SRCALPHA)
-            if self.icon == "play":
-                pygame.draw.polygon(icon_surf, COLORS["white"], [(5, 5), (5, 25), (25, 15)])
-            elif self.icon == "back":
-                pygame.draw.polygon(icon_surf, COLORS["white"], [(25, 5), (5, 15), (25, 25)])
-            screen.blit(icon_surf, icon_surf.get_rect(center=(draw_rect.left + 40, draw_rect.centery)))
+        # Dessiner sur l'écran principal
+        screen.blit(button_surface, self.rect)
 
-class MenuManager:
-    """Gère tous les menus avec transitions"""
-    def __init__(self, screen):
+# 🎨 SELECTEUR DE NIVEAU
+class LevelSelector:
+    def __init__(self, levels_list, screen):
+        self.levels = levels_list
         self.screen = screen
-        self.particle_system = ParticleSystem()
-        self.fade_alpha = 0
-        self.fade_target = 0
+        self.current_index = 0
+        self.target_x = 0
+        self.current_x = 0
+        self.animation_speed = 15
         
-        # Boutons du menu principal
-        self.main_buttons = {
-            "play": Button(WIDTH//2 - 125, 250, 250, 60, "PLAY", "play"),
-            "quit": Button(WIDTH//2 - 125, 340, 250, 60, "QUIT", "back", primary=False)
-        }
+        btn_y = HEIGHT // 2
+        # Boutons noirs transparents
+        self.btn_prev = MinimalButton(50, btn_y, 60, 60, "<")
+        self.btn_next = MinimalButton(WIDTH - 110, btn_y, 60, 60, ">")
+        self.btn_play = MinimalButton(WIDTH//2 - 100, HEIGHT - 150, 200, 60, "PLAY")
         
-        # Boutons pause
-        self.pause_buttons = {
-            "resume": Button(WIDTH//2 - 100, HEIGHT//2 - 50, 200, 50, "RESUME", "play"),
-            "menu": Button(WIDTH//2 - 100, HEIGHT//2 + 20, 200, 50, "MAIN MENU", "back", primary=False)
-        }
+        self.title_font = get_pixel_font(64)
+        
+    def navigate(self, direction):
+        new_index = self.current_index + direction
+        if 0 <= new_index < len(self.levels):
+            self.current_index = new_index
+            self.target_x = -self.current_index * WIDTH
     
-    def update(self, mouse_pos, dt, game_state):
-        """Met à jour tous les éléments du menu"""
-        self.particle_system.update(dt)
+    def update(self, mouse_pos, dt):
+        diff = self.target_x - self.current_x
+        self.current_x += diff * self.animation_speed * dt
         
-        # Fade transition
-        if self.fade_alpha != self.fade_target:
-            diff = self.fade_target - self.fade_alpha
-            self.fade_alpha += diff * 0.1
+        self.btn_prev.update(mouse_pos)
+        self.btn_next.update(mouse_pos)
+        self.btn_play.update(mouse_pos)
         
-        # Update boutons selon l'état
-        if game_state == "MENU":
-            for btn in self.main_buttons.values():
-                btn.update(mouse_pos)
-        elif game_state == "PAUSE":
-            for btn in self.pause_buttons.values():
-                btn.update(mouse_pos)
-        
-        return self.fade_alpha
+        self.btn_prev.hovered = self.current_index > 0 and self.btn_prev.hovered
+        self.btn_next.hovered = self.current_index < len(self.levels) - 1 and self.btn_next.hovered
     
-    def draw_main(self, screen, game_state):
-        """Dessine le menu principal premium"""
-        if game_state != "MENU":
-            return {}
+    def draw(self, screen, bg_image=None):
+        # Dessiner le fond
+        if bg_image:
+            bg_scaled = pygame.transform.scale(bg_image, screen.get_size())
+            screen.blit(bg_scaled, (0, 0))
+        else:
+            screen.fill(COLOR_WHITE)
         
-        # Fond animé
-        screen.fill(COLORS["bg"])
-        self.particle_system.draw(screen)
-        
-        # Titre avec glow
-        title_font = pygame.font.SysFont("Arial", 72, bold=True)
-        title_surf = title_font.render("GEOMETRY DASH", True, COLORS["primary"])
-        title_rect = title_surf.get_rect(center=(WIDTH//2, 120))
-        
-        glow = pygame.Surface((title_rect.w + 20, title_rect.h + 20), pygame.SRCALPHA)
-        pygame.draw.rect(glow, (*COLORS["glow"], 30), glow.get_rect(), border_radius=10)
-        screen.blit(glow, glow.get_rect(center=title_rect.center))
-        
-        screen.blit(title_surf, title_rect)
-        
-        # Ligne décorative
-        line_y = 180
-        for x in range(0, WIDTH, 40):
-            pygame.draw.rect(screen, COLORS["primary"], (x, line_y, 20, 3))
-            pygame.draw.rect(screen, COLORS["secondary"], (x + 20, line_y, 20, 3))
-        
-        # Boutons
-        for btn in self.main_buttons.values():
-            btn.draw(screen)
-        
-        # Footer
-        footer_font = pygame.font.SysFont("Arial", 16)
-        footer = footer_font.render("PREMIUM EDITION - Version 1.0", True, COLORS["gray"])
-        screen.blit(footer, footer.get_rect(center=(WIDTH//2, HEIGHT - 30)))
-        
-        # Fade overlay
-        if self.fade_alpha > 0:
-            fade = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
-            fade.fill((0, 0, 0, int(self.fade_alpha)))
-            screen.blit(fade, (0, 0))
-        
-        return {key: btn.rect for key, btn in self.main_buttons.items()}
-    
-    def draw_pause(self, screen, game_state):
-        """Dessine le menu pause premium"""
-        if game_state != "PAUSE":
-            return {}
-        
-        # Overlay semi-transparent
-        overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
-        overlay.fill((*COLORS["bg"], 200))
-        screen.blit(overlay, (0, 0))
-        
-        # Panneau central
-        panel = pygame.Rect(WIDTH//2 - 150, HEIGHT//2 - 120, 300, 240)
-        pygame.draw.rect(screen, COLORS["dark"], panel, border_radius=20)
-        
-        # Bordure glow
-        border = pygame.Surface((panel.w + 6, panel.h + 6), pygame.SRCALPHA)
-        pygame.draw.rect(border, (*COLORS["primary"], 100), border.get_rect(), border_radius=23)
-        screen.blit(border, border.get_rect(center=panel.center).move(-3, -3))
-        
-        # Titre
-        title_font = pygame.font.SysFont("Arial", 48, bold=True)
-        title = title_font.render("PAUSED", True, COLORS["primary"])
-        screen.blit(title, title.get_rect(center=(WIDTH//2, panel.top + 40)))
-        
-        # Boutons
-        for btn in self.pause_buttons.values():
-            btn.draw(screen)
-        
-        # Fade
-        if self.fade_alpha > 0:
-            fade = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
-            fade.fill((0, 0, 0, int(self.fade_alpha)))
-            screen.blit(fade, (0, 0))
-        
-        return {key: btn.rect for key, btn in self.pause_buttons.items()}
-    
-    def draw_level_select(self, screen, mouse_pos, available_levels, game_state):
-        """Dessine la sélection de niveau premium"""
-        if game_state != "LEVEL_SELECT":
-            return {"back": pygame.Rect(0,0,0,0), "levels": []}
-        
-        screen.fill(COLORS["bg"])
-        self.particle_system.draw(screen)
-        
-        # Titre
-        title_font = pygame.font.SysFont("Arial", 48, bold=True)
-        title = title_font.render("SELECT LEVEL", True, COLORS["primary"])
-        screen.blit(title, title.get_rect(center=(WIDTH//2, 60)))
-        
-        # Bouton retour
-        back_btn = Button(20, 20, 120, 40, "← BACK", "back", primary=False)
-        back_btn.update(mouse_pos)
-        back_btn.draw(screen)
-        
-        # Grille des niveaux
-        level_buttons = []
-        level_width, level_height = 180, 60
-        start_x = WIDTH//2 - (level_width * 2 + 40) // 2
-        start_y = 150
-        
-        for i, level_name in enumerate(available_levels):
-            row = i // 3
-            col = i % 3
-            x = start_x + col * (level_width + 20)
-            y = start_y + row * (level_height + 20)
+        # Texte des niveaux en blanc avec ombre
+        for i in range(len(self.levels)):
+            x_pos = WIDTH // 2 + (i * WIDTH) + int(self.current_x)
+            y_pos = HEIGHT // 2 - 30
             
-            btn = Button(x, y, level_width, level_height, 
-                        f"Level {i+1}", primary=(i % 2 == 0))
-            btn.level_name = level_name
-            hovered = btn.update(mouse_pos)
-            btn.draw(screen)
-            level_buttons.append((btn.rect, level_name))
+            if -WIDTH < x_pos < WIDTH * 2:
+                # Ombre
+                shadow = self.title_font.render(f"LEVEL {i+1}", True, (0, 0, 0, 150))
+                shadow_rect = shadow.get_rect(center=(x_pos + 2, y_pos + 2))
+                screen.blit(shadow, shadow_rect)
+                
+                # Texte principal
+                title_text = self.title_font.render(f"LEVEL {i+1}", True, COLOR_WHITE)
+                text_rect = title_text.get_rect(center=(x_pos, y_pos))
+                screen.blit(title_text, text_rect)
         
-        # Message si pas de niveaux
-        if not available_levels:
-            msg_font = pygame.font.SysFont("Arial", 24)
-            msg1 = msg_font.render("No levels available", True, COLORS["gray"])
-            msg2 = msg_font.render("Create levels in the 'levels' folder", True, COLORS["gray"])
-            screen.blit(msg1, msg1.get_rect(center=(WIDTH//2, HEIGHT//2)))
-            screen.blit(msg2, msg2.get_rect(center=(WIDTH//2, HEIGHT//2 + 40)))
-        
-        # Fade
-        if self.fade_alpha > 0:
-            fade = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
-            fade.fill((0, 0, 0, int(self.fade_alpha)))
-            screen.blit(fade, (0, 0))
-        
-        return {"back": back_btn.rect, "levels": level_buttons}
+        self.btn_prev.draw(screen)
+        self.btn_next.draw(screen)
+        self.btn_play.draw(screen)
+    
+    def get_current_level(self):
+        return self.levels[self.current_index] if self.levels else None
 
-# Global menu manager
-MENU_MANAGER = None
+# 🎨 ÉCRAN DE VICTOIRE
+def draw_victory_screen(screen, mouse_pos, attempts):
+    """Écran de victoire minimaliste avec style cohérent"""
+    # Fond semi-transparent noir
+    overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+    overlay.fill((0, 0, 0, 180))
+    screen.blit(overlay, (0, 0))
+    
+    # Police pixel
+    title_font = get_pixel_font(48)
+    stats_font = get_pixel_font(24)
+    
+    # Titre
+    title = title_font.render("VICTORY!", True, COLOR_WHITE)
+    title_shadow = title_font.render("VICTORY!", True, (0, 0, 0, 150))
+    title_rect = title.get_rect(center=(WIDTH//2, HEIGHT//3))
+    shadow_rect = title_shadow.get_rect(center=(WIDTH//2 + 2, HEIGHT//3 + 2))
+    
+    screen.blit(title_shadow, shadow_rect)
+    screen.blit(title, title_rect)
+    
+    # Statistiques
+    stats = stats_font.render(f"Attempts: {attempts}", True, COLOR_WHITE)
+    stats_rect = stats.get_rect(center=(WIDTH//2, HEIGHT//2))
+    screen.blit(stats, stats_rect)
+    
+    # Boutons
+    btn_menu = MinimalButton(WIDTH//2 - 150, HEIGHT - 200, 140, 50, "MENU")
+    btn_retry = MinimalButton(WIDTH//2 + 10, HEIGHT - 200, 140, 50, "RETRY")
+    
+    btn_menu.update(mouse_pos)
+    btn_retry.update(mouse_pos)
+    btn_menu.draw(screen)
+    btn_retry.draw(screen)
+    
+    return {"menu": btn_menu.rect, "retry": btn_retry.rect}
 
-def get_menu_manager(screen):
-    global MENU_MANAGER
-    if MENU_MANAGER is None:
-        MENU_MANAGER = MenuManager(screen)
-    return MENU_MANAGER
+# 🛠️ Instance globale
+level_selector_instance = None
 
-# Fonctions de compatibilité
-def draw_menu(screen, mouse_pos, game_state):
-    manager = get_menu_manager(screen)
-    manager.update(mouse_pos, 0.016, game_state)
-    return manager.draw_main(screen, game_state)
+def get_level_selector(screen, levels):
+    global level_selector_instance
+    if level_selector_instance is None:
+        level_selector_instance = LevelSelector(levels, screen)
+    return level_selector_instance
 
+# 🎨 MENU PRINCIPAL
+def draw_menu(screen, mouse_pos, game_state, bg_image=None):
+    if game_state != "MENU":
+        return {}
+    
+    # Dessiner le fond
+    if bg_image:
+        bg_scaled = pygame.transform.scale(bg_image, screen.get_size())
+        screen.blit(bg_scaled, (0, 0))
+    else:
+        screen.fill(COLOR_WHITE)
+    
+    # Police pixel
+    title_font = get_pixel_font(64)
+    
+    # Titre avec ombre
+    title = title_font.render("GEOMETRY DASH", True, COLOR_WHITE)
+    title_shadow = title_font.render("GEOMETRY DASH", True, (0, 0, 0, 150))
+    
+    title_rect = title.get_rect(center=(WIDTH//2, HEIGHT//3))
+    shadow_rect = title_shadow.get_rect(center=(WIDTH//2 + 3, HEIGHT//3 + 3))
+    
+    screen.blit(title_shadow, shadow_rect)
+    screen.blit(title, title_rect)
+    
+    # Boutons noirs transparents
+    btn_play = MinimalButton(WIDTH//2 - 100, HEIGHT//2, 200, 60, "PLAY")
+    btn_quit = MinimalButton(WIDTH//2 - 100, HEIGHT//2 + 100, 200, 60, "QUIT")
+    
+    btn_play.update(mouse_pos)
+    btn_quit.update(mouse_pos)
+    btn_play.draw(screen)
+    btn_quit.draw(screen)
+    
+    return {"play": btn_play.rect, "quit": btn_quit.rect}
+
+# 🎨 MENU PAUSE MINIMALISTE
 def draw_pause_menu(screen, mouse_pos, game_state):
-    manager = get_menu_manager(screen)
-    manager.update(mouse_pos, 0.016, game_state)
-    return manager.draw_pause(screen, game_state)
+    if game_state != "PAUSE":
+        return {}
+    
+    # Pas de fond, juste les boutons centrés
+    btn_resume = MinimalButton(WIDTH//2 - 100, HEIGHT//2 - 40, 200, 60, "RESUME")
+    btn_menu = MinimalButton(WIDTH//2 - 100, HEIGHT//2 + 40, 200, 60, "MENU")
+    
+    btn_resume.update(mouse_pos)
+    btn_menu.update(mouse_pos)
+    btn_resume.draw(screen)
+    btn_menu.draw(screen)
+    
+    return {"resume": btn_resume.rect, "menu": btn_menu.rect}
 
+# 🎨 MENU SÉLECTION (placeholder)
 def draw_level_select(screen, mouse_pos, available_levels, game_state):
-    manager = get_menu_manager(screen)
-    manager.update(mouse_pos, 0.016, game_state)
-    return manager.draw_level_select(screen, mouse_pos, available_levels, game_state)
+    return {"back": pygame.Rect(0,0,0,0), "prev": pygame.Rect(0,0,0,0), 
+            "next": pygame.Rect(0,0,0,0), "play": pygame.Rect(0,0,0,0), "levels": []}

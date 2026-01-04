@@ -1,7 +1,7 @@
 {
   "tile_size": 75,
-  "theme_folder": "red",
-  "parallax_speed": 0.4,
+  "theme_folder": "winter",
+  "parallax_speed": 0.2,
   "layout": [
     "                                            ",
     "                                            ",

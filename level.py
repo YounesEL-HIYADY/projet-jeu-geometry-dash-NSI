@@ -1,71 +1,111 @@
 import pygame
 import json
 import os
+import random
 from player import Player
-from objects import Platform, Spike, DustParticle, Orb, FinishFlag
+from objects import Platform, Spike, Orb, FinishFlag
+from config import CULLING_CELL_SIZE
+
+class SpatialHash:
+    def __init__(self, cell_size):
+        self.cell_size = cell_size
+        self.grid = {}
+    
+    def _hash(self, x, y):
+        return (int(x // self.cell_size), int(y // self.cell_size))
+    
+    def insert(self, obj, rect):
+        cells = self._get_cells(rect)
+        for cell in cells:
+            if cell not in self.grid:
+                self.grid[cell] = []
+            self.grid[cell].append(obj)
+    
+    def _get_cells(self, rect):
+        cells = set()
+        top_left = self._hash(rect.left, rect.top)
+        bottom_right = self._hash(rect.right, rect.bottom)
+        
+        for x in range(top_left[0], bottom_right[0] + 1):
+            for y in range(top_left[1], bottom_right[1] + 1):
+                cells.add((x, y))
+        return cells
+    
+    def query(self, rect):
+        cells = self._get_cells(rect)
+        objects = set()
+        for cell in cells:
+            if cell in self.grid:
+                objects.update(self.grid[cell])
+        return list(objects)
+    
+    def clear(self):
+        self.grid.clear()
 
 class Camera:
-    """Gère le défilement de la caméra avec support pause"""
     def __init__(self, scroll_speed):
         self.scroll_speed = scroll_speed
         self.offset_x = 0.0
         self.is_paused = False
+        # Camera shake
+        self.shake_intensity = 0
+        self.shake_duration = 0
+        self.shake_offset_x = 0
+        self.shake_offset_y = 0
     
     def update(self, dt):
-        """Met à jour la position de la caméra (gelée si pause)"""
         if not self.is_paused:
             self.offset_x += self.scroll_speed * dt
+        
+        # Update shake
+        if self.shake_duration > 0:
+            self.shake_offset_x = random.uniform(-self.shake_intensity, self.shake_intensity)
+            self.shake_offset_y = random.uniform(-self.shake_intensity, self.shake_intensity)
+            self.shake_duration -= dt
+            if self.shake_duration <= 0:
+                self.shake_intensity = 0
+                self.shake_offset_x = 0
+                self.shake_offset_y = 0
     
     def apply(self, rect):
-        """Applique l'offset de caméra à un rect pour le dessin"""
-        return rect.move(int(-self.offset_x), 0)
+        # Combine scroll offset with shake
+        return rect.move(int(-self.offset_x + self.shake_offset_x), int(self.shake_offset_y))
+    
+    def trigger_shake(self, intensity=5, duration=0.15):
+        self.shake_intensity = intensity
+        self.shake_duration = duration
 
 class Level:
-    """
-    Classe Level : gère le niveau complet avec caméra, parallaxe, sol et plateformes séparés.
-    """
-    
     BASE_SCROLL_SPEED = 250.0
     DEATH_ZONE_Y = 1000
 
     def __init__(self, level_path, bg_image, assets_cache, screen_width, screen_height): 
-        """
-        Initialise le niveau depuis un fichier JSON avec cache d'assets.
-        """
-        # Sauvegarde des ressources
         self.level_path = level_path 
         self.bg_image = bg_image 
         self.assets_cache = assets_cache
         self.screen_width = screen_width
         self.screen_height = screen_height
         
-        # Création de la caméra
         self.camera = Camera(self.BASE_SCROLL_SPEED)
-        
-        # Données brutes
         self.raw_data = self._load_level_data()
-        
-        # Initialisation
+        self.spatial_hash = SpatialHash(CULLING_CELL_SIZE)
         self._init_level_content()
-        
-        # Musique
         self._load_music()
         
-        # État
         self.is_completed = False
-        self.respawn_invincibility = 0.0
+        self.respawn_invincibility = 0.5
         
+        # 🛠️ NEW: Timer pour effets de mort
+        self.death_fx_timer = 0.0
+    
     def _load_level_data(self):
-        """Charge les données JSON"""
         try:
             with open(self.level_path) as f:
                 return json.load(f)
-        except FileNotFoundError:
-            print(f"Erreur : Fichier de niveau introuvable à {self.level_path}")
+        except:
             return {"tile_size": 75, "layout": ["========================================"]}
     
     def _load_music(self):
-        """Charge la musique du niveau si elle existe"""
         self.music_path = None
         try:
             level_name = os.path.basename(self.level_path).replace(".json", "")
@@ -75,102 +115,85 @@ class Level:
                 pygame.mixer.music.set_volume(0.7)
                 pygame.mixer.music.play(-1)
                 self.music_path = music_file
-                print(f"🎵 Musique chargée : {music_file}")
         except Exception as e:
-            print(f"⚠ Pas de musique pour ce niveau : {e}")
+            print(f"⚠ Pas de musique : {e}")
     
     def stop_music(self):
-        """Arrête la musique"""
         if self.music_path:
             pygame.mixer.music.stop()
     
     def _init_level_content(self):
-        """Initialise les objets du niveau"""
         data = self.raw_data
-        
         self.tile_size = data.get("tile_size", 75)
         layout = data["layout"]
-        
-        # Thème du niveau
         self.theme_folder = data.get("theme_folder", "default")
-        
-        # Parallaxe
         self.parallax_speed = data.get("parallax_speed", 0.5)
         
-        # Préparation des assets de thème
         self._prepare_theme_assets()
         
-        # Groupes
         self.platforms = pygame.sprite.Group()
         self.spikes = pygame.sprite.Group()
-        self.particles = pygame.sprite.Group()
-        self.orbs = pygame.sprite.Group()  # NOUVEAU
-        self.finish_flags = pygame.sprite.Group()  # NOUVEAU
+        self.orbs = pygame.sprite.Group()
+        self.finish_flags = pygame.sprite.Group()
         
-        # Progression
         self.level_end_x = len(layout[0]) * self.tile_size
         self.player_start_x = 100
         
-        # Génération des objets
+        self.spatial_hash.clear()
+        
         for row_index, row in enumerate(layout):
             for col_index, char in enumerate(row):
                 world_x = col_index * self.tile_size
                 y = row_index * self.tile_size
                 
-                # DIFFÉRENCIATION SOL vs PLATEFORME
                 if char == "=":
                     platform = Platform(world_x, y, self.tile_size, self.block_image)
                     self.platforms.add(platform)
+                    self.spatial_hash.insert(platform, platform.rect)
                     
                 elif char == "P":
                     platform = Platform(world_x, y, self.tile_size, self.platform_image)
                     self.platforms.add(platform)
+                    self.spatial_hash.insert(platform, platform.rect)
                     
                 elif char == "S":
                     spike = Spike(world_x, y + self.tile_size, self.tile_size, self.spike_image)
                     self.spikes.add(spike)
+                    self.spatial_hash.insert(spike, spike.rect)
                 
-                # NOUVEAU : Orb
                 elif char == "O":
                     orb = Orb(world_x, y, self.tile_size, self.orb_image)
                     self.orbs.add(orb)
+                    self.spatial_hash.insert(orb, orb.rect)
                 
-                # NOUVEAU : Flag de fin
                 elif char == "F":
                     flag = FinishFlag(world_x, y, self.tile_size)
                     self.finish_flags.add(flag)
+                    self.spatial_hash.insert(flag, flag.rect)
         
-        # Joueur
         self.player = Player(self.player_start_x, 200, self.player_image)
         self.respawn_invincibility = 0.5
     
     def _prepare_theme_assets(self):
-        """Charge les images du thème ou fallback sur default"""
         theme_path = f"assets/themes/{self.theme_folder}"
         default_path = "assets/themes/default"
         
-        # Block (sol)
         self.block_image = self._load_theme_asset(
             f"{theme_path}/block.png", 
             f"{default_path}/block.png"
         )
         self.block_image = pygame.transform.scale(self.block_image, (self.tile_size, self.tile_size))
         
-        # Platform (plateformes en l'air)
         platform_img = self._load_theme_asset(
             f"{theme_path}/platform.png",
             f"{default_path}/platform.png"
         )
-        # Fallback sur block.png si platform.png manque
         if platform_img is None:
-            print(f"⚠ platform.png manquant pour le thème '{self.theme_folder}', fallback sur block.png")
             platform_img = self.block_image
         else:
             platform_img = pygame.transform.scale(platform_img, (self.tile_size, self.tile_size))
-        
         self.platform_image = platform_img
         
-        # Spike
         spike_img = self._load_theme_asset(
             f"{theme_path}/spike.png",
             f"{default_path}/spike.png"
@@ -180,26 +203,21 @@ class Level:
         new_height = int(spike_img.get_height() * spike_scale)
         self.spike_image = pygame.transform.scale(spike_img, (new_width, new_height))
         
-        # Player
         player_img = self._load_theme_asset(
             f"{theme_path}/player.png",
             f"{default_path}/player.png"
         )
         self.player_image = player_img
         
-        # NOUVEAU : Orb
         orb_img = self._load_theme_asset(
             f"{theme_path}/orb.png",
             f"{default_path}/orb.png"
         )
         if orb_img is None:
-            # Fallback : créer un cercle jaune
             orb_img = pygame.Surface((int(self.tile_size*0.6), int(self.tile_size*0.6)), pygame.SRCALPHA)
             pygame.draw.circle(orb_img, (255, 200, 0), orb_img.get_rect().center, orb_img.get_width()//2)
-        
         self.orb_image = orb_img
         
-        # Background layers parallaxe
         self.parallax_layers = []
         for i in range(1, 3):
             layer_path = f"{theme_path}/bg_layer{i}.png"
@@ -209,7 +227,6 @@ class Level:
                 self.parallax_layers.append(layer_img)
     
     def _load_theme_asset(self, primary_path, fallback_path):
-        """Charge un asset avec fallback"""
         cache_key = f"theme_{self.theme_folder}_{os.path.basename(primary_path)}"
         if cache_key in self.assets_cache:
             return self.assets_cache[cache_key]
@@ -220,7 +237,6 @@ class Level:
         elif fallback_path and os.path.exists(fallback_path):
             img = pygame.image.load(fallback_path).convert_alpha()
         else:
-            # Fallback ultime
             img = pygame.Surface((50, 50), pygame.SRCALPHA)
             img.fill((100, 100, 100))
         
@@ -228,61 +244,63 @@ class Level:
         return img
     
     def reset(self):
-        """RESET PROPRE"""
         self.stop_music()
-        
         self.platforms.empty()
         self.spikes.empty()
-        self.particles.empty()
-        self.orbs.empty()  # NOUVEAU
-        self.finish_flags.empty()  # NOUVEAU
+        self.orbs.empty()
+        self.finish_flags.empty()
         
         self.camera.offset_x = 0.0
         self.camera.is_paused = False
         
         self._init_level_content()
         self.is_completed = False
+        self.death_fx_timer = 0.0  # 🛠️ Reset
     
     def update(self, dt):
-        """Met à jour tous les éléments"""
         dt = min(dt, 0.016)
-        
         self.camera.update(dt)
         
         if self.respawn_invincibility > 0:
             self.respawn_invincibility = max(0, self.respawn_invincibility - dt)
         
-        # Update joueur
-        was_on_ground = not self.player.is_jumping
-        player_died = self.player.update(self.platforms, dt, self.camera) 
+        # 🛠️ Update death FX timer
+        if self.death_fx_timer > 0:
+            self.death_fx_timer -= dt
+        
+        # Zone de culling
+        visible_rect = pygame.Rect(
+            self.camera.offset_x - 100,
+            0,
+            self.screen_width + 200,
+            self.screen_height
+        )
+        
+        all_visible_objects = self.spatial_hash.query(visible_rect)
+        visible_platforms = [obj for obj in all_visible_objects if isinstance(obj, Platform)]
+        
+        player_died = self.player.update(visible_platforms, dt, self.camera) 
         
         if player_died:
+            self.camera.trigger_shake(6, 0.15)
+            self.death_fx_timer = 0.3  # 🛠️ 0.3s d'effet
             return (True, False)
         
-        # Mort verticale
         if self.player.hitbox.top > self.DEATH_ZONE_Y:
+            self.camera.trigger_shake(6, 0.15)
+            self.death_fx_timer = 0.3  # 🛠️ 0.3s d'effet
             return (True, False)
-        
-        # Particules si atterrissage
-        is_now_on_ground = not self.player.is_jumping
-        if not was_on_ground and is_now_on_ground:
-            for _ in range(8):
-                particle = DustParticle(self.player.hitbox.centerx, self.player.hitbox.bottom)
-                self.particles.add(particle)
-        
-        # Update particules
-        self.particles.update(dt)
         
         # Update orbs
         for orb in self.orbs:
-            orb.update(dt)
+            if visible_rect.colliderect(orb.rect):
+                orb.update(dt)
         
-        # Collisions avec orbs
+        # Collecter orbs
         for orb in self.orbs:
             if not orb.collected and self.player.hitbox.colliderect(orb.hitbox):
                 orb.collect()
                 self.player.collect_orb()
-                print("✨ Double saut activé!")
         
         # Vérifier flag de fin
         for flag in self.finish_flags:
@@ -292,10 +310,13 @@ class Level:
                 self.stop_music()
                 return (False, True)
         
-        # Collisions spikes
+        # Vérifier collision spikes
         if self.respawn_invincibility <= 0:
-            for spike in self.spikes:
+            visible_spikes = [obj for obj in all_visible_objects if isinstance(obj, Spike)]
+            for spike in visible_spikes:
                 if self.player.hitbox.colliderect(spike.hitbox):
+                    self.camera.trigger_shake(6, 0.15)
+                    self.death_fx_timer = 0.3  # 🛠️ 0.3s d'effet
                     return (True, False)
         
         return (False, False)
@@ -304,44 +325,70 @@ class Level:
         return self.camera.offset_x, self.level_end_x, self.player_start_x
     
     def draw(self, screen, screen_width):
-        """Affiche avec parallaxe et culling"""
-        # Fond
+        # 🛠️ Background with shake offset
         bg_scaled = pygame.transform.scale(self.bg_image, screen.get_size())
-        screen.blit(bg_scaled, (0, 0))
+        bg_pos = (int(self.camera.shake_offset_x), int(self.camera.shake_offset_y))
+        screen.blit(bg_scaled, bg_pos)
         
-        # Parallaxe
+        # Parallax
         self._draw_parallax(screen, screen_width)
         
-        # Culling zone
+        # Progress bar
+        self._draw_progress_bar(screen)
+        
+        # Zone de rendu
         visible_left = self.camera.offset_x - 100
         visible_right = self.camera.offset_x + screen_width + 100
         
-        # Dessin objets
-        for platform in self.platforms:
-            if platform.rect.right > visible_left and platform.rect.left < visible_right:
-                screen.blit(platform.image, self.camera.apply(platform.rect))
+        query_rect = pygame.Rect(visible_left, -100, visible_right - visible_left + 200, self.screen_height + 200)
+        visible_objects = self.spatial_hash.query(query_rect)
         
-        for spike in self.spikes:
-            if spike.rect.right > visible_left and spike.rect.left < visible_right:
-                spike.draw(screen, self.camera)
+        # Dessiner objets visibles
+        for obj in visible_objects:
+            if hasattr(obj, 'draw'):
+                obj.draw(screen, self.camera)
+            elif hasattr(obj, 'image') and hasattr(obj, 'rect'):
+                screen.blit(obj.image, self.camera.apply(obj.rect))
         
+        # Dessiner orbs non collectés
         for orb in self.orbs:
-            if not orb.collected:
+            if not orb.collected and query_rect.colliderect(orb.rect):
                 orb.draw(screen, self.camera)
         
-        for particle in self.particles:
-            if particle.rect.right > visible_left and platform.rect.left < visible_right:
-                particle.draw(screen, self.camera)
-        
-        # Joueur
+        # Dessiner joueur
         self.player.draw(screen, self.camera, self.respawn_invincibility > 0)
+        
+        # 🛠️ Vignettage rouge à la mort
+        if self.death_fx_timer > 0:
+            self._draw_death_vignette(screen)
     
     def _draw_parallax(self, screen, screen_width):
-        """Dessine les layers de parallaxe"""
         for i, layer in enumerate(self.parallax_layers):
             speed = 0.3 * (i + 1)
-            offset = int(self.camera.offset_x * speed)
-            
-            # Tiling infini
-            screen.blit(layer, (-offset % screen_width - screen_width, 0))
-            screen.blit(layer, (-offset % screen_width, 0))
+            offset = int(self.camera.offset_x * speed) % screen_width
+            screen.blit(layer, (-offset, 0))
+            screen.blit(layer, (-offset + screen_width, 0))
+    
+    def _draw_progress_bar(self, screen):
+        """Barre de progression minimaliste en haut de l'écran"""
+        progress = min(1.0, self.camera.offset_x / self.level_end_x) if self.level_end_x > 0 else 0
+        
+        bar_width = 200
+        bar_height = 6
+        x = (self.screen_width - bar_width) // 2
+        y = 15
+        
+        # Fond
+        pygame.draw.rect(screen, (180, 180, 180), (x, y, bar_width, bar_height))
+        # Progress
+        pygame.draw.rect(screen, (0, 200, 255), (x, y, bar_width * progress, bar_height))
+        # Bordure fine
+        pygame.draw.rect(screen, (0, 0, 0), (x, y, bar_width, bar_height), 1)
+    
+    def _draw_death_vignette(self, screen):
+        """🛠️ Dessine un vignettage rouge léger quand on meurt"""
+        vignette = pygame.Surface((self.screen_width, self.screen_height), pygame.SRCALPHA)
+        # Alpha décroissant avec le timer (fade out)
+        alpha = int(100 * (self.death_fx_timer / 0.3))
+        vignette.fill((255, 50, 50, alpha))  # Rouge transparent
+        screen.blit(vignette, (0, 0))
